@@ -1,0 +1,1634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kinetic Web Music Room</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0b10;
+      --panel: #13151f;
+      --accent: #e8b059;
+      --text: #e2e4ed;
+      --muted: #767d96;
+    }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+      touch-action: none;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+    }
+
+    /* Custom sleek select dropdowns */
+    .studio-select {
+      background: rgba(255, 255, 255, 0.06);
+      color: #f3f4f8;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+      outline: none;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .studio-select:hover, .studio-select:focus {
+      border-color: var(--accent);
+      background: rgba(232, 176, 89, 0.14);
+    }
+
+    .studio-select option {
+      background: #151822;
+      color: #f3f4f8;
+    }
+
+    .studio-btn {
+      background: rgba(255, 255, 255, 0.07);
+      color: var(--text);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .studio-btn:hover {
+      background: rgba(232, 176, 89, 0.22);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .slot-badge {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--accent);
+      padding-left: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Minimal Floating Studio Control Bar -->
+  <div class="fixed top-3 left-1/2 -translate-x-1/2 z-20 w-[96%] max-w-6xl pointer-events-auto">
+    <div class="flex flex-wrap items-center justify-between gap-2 bg-[#13151f]/85 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/10 shadow-2xl">
+      
+      <!-- 3 Instrument Slots -->
+      <div class="flex flex-wrap items-center gap-3">
+        <!-- Slot 1: Strings -->
+        <div class="flex items-center gap-1.5">
+          <span class="slot-badge">1. Strings:</span>
+          <select id="slot1Select" class="studio-select">
+            <option value="acoustic">🎸 Acoustic Guitar</option>
+            <option value="electric">⚡ Electric Guitar</option>
+            <option value="mandolin">🪕 Mandolin (මැන්ඩලීනය)</option>
+            <option value="violin">🎻 Violin (වයලීනය)</option>
+            <option value="none">✖ Hide</option>
+          </select>
+        </div>
+
+        <!-- Slot 2: Melody / Keys / Wind -->
+        <div class="flex items-center gap-1.5">
+          <span class="slot-badge">2. Melody:</span>
+          <select id="slot2Select" class="studio-select">
+            <option value="yamaha">🎹 Yamaha Synth Keys</option>
+            <option value="piano">🎼 Grand Piano (පියානෝව)</option>
+            <option value="flute">🪈 Bansuri Flute (බටනලාව)</option>
+            <option value="trumpet">🎺 Brass Trumpet (ට්‍රම්පට්)</option>
+            <option value="none">✖ Hide</option>
+          </select>
+        </div>
+
+        <!-- Slot 3: Rhythm / Percussion -->
+        <div class="flex items-center gap-1.5">
+          <span class="slot-badge">3. Rhythm:</span>
+          <select id="slot3Select" class="studio-select">
+            <option value="drums">🥁 Acoustic Drum Kit (බෙර)</option>
+            <option value="octapad">🎛️ Roland Octapad (ඔක්ටපෑඩ්)</option>
+            <option value="bera">🪘 Sri Lankan Bera / Tabla</option>
+            <option value="none">✖ Hide</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Orb & Staff Controls -->
+      <div class="flex items-center gap-2 ml-auto">
+        <span class="hidden xl:inline text-[11px] text-slate-400 mr-1">Drag any pad/drum to move • Click empty space for orbs</span>
+        <button id="addOrbBtn" class="studio-btn">+ Orb</button>
+        <button id="clearOrbsBtn" class="studio-btn">Clear Orbs</button>
+        <button id="clearSheetBtn" class="studio-btn">Clear Staff</button>
+      </div>
+    </div>
+  </div>
+
+  <canvas id="stage"></canvas>
+
+  <script>
+    // ============================================================================
+    // 1. MULTI-INSTRUMENT WEB AUDIO SYNTHESIZER
+    // ============================================================================
+    class StudioSoundEngine {
+      constructor() {
+        this.ctx = null;
+      }
+
+      init() {
+        if (!this.ctx) {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioCtx();
+        }
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+
+      // ---- SLOT 1: STRING INSTRUMENTS ----
+      playStringInstrument(mode, freq, velocity = 0.85) {
+        this.init();
+        if (mode === 'acoustic') {
+          this.karplusStrong(freq, velocity, 2.3, 0.994, 'lowshelf', 240, 4);
+        } else if (mode === 'electric') {
+          this.playElectricGuitar(freq, velocity);
+        } else if (mode === 'mandolin') {
+          // Mandolin has twin courses: two slightly detuned bright plucks in rapid succession
+          this.karplusStrong(freq, velocity, 1.5, 0.991, 'highshelf', 1800, 6);
+          setTimeout(() => {
+            this.karplusStrong(freq * 1.003, velocity * 0.75, 1.4, 0.991, 'highshelf', 1800, 6);
+          }, 18);
+        } else if (mode === 'violin') {
+          this.playViolinBow(freq, velocity);
+        }
+      }
+
+      karplusStrong(freq, velocity, duration, damping, filterType, filterFreq, filterGain) {
+        const now = this.ctx.currentTime;
+        const sampleRate = this.ctx.sampleRate;
+        const bufferSize = Math.floor(sampleRate * duration);
+        const buffer = this.ctx.createBuffer(1, bufferSize, sampleRate);
+        const data = buffer.getChannelData(0);
+
+        const period = Math.max(2, Math.round(sampleRate / freq));
+        const ring = new Float32Array(period);
+        for (let i = 0; i < period; i++) {
+          ring[i] = (Math.random() * 2 - 1) * velocity;
+        }
+
+        let idx = 0;
+        for (let i = 0; i < bufferSize; i++) {
+          const nextIdx = (idx + 1) % period;
+          data[i] = ring[idx];
+          ring[idx] = 0.5 * (ring[idx] + ring[nextIdx]) * damping;
+          idx = nextIdx;
+        }
+
+        const source = this.ctx.createBufferSource();
+        source.buffer = buffer;
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = filterType;
+        filter.frequency.value = filterFreq;
+        filter.gain.value = filterGain;
+
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.55, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+        source.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        source.start(now);
+      }
+
+      playElectricGuitar(freq, velocity) {
+        const now = this.ctx.currentTime;
+        const osc1 = this.ctx.createOscillator();
+        const osc2 = this.ctx.createOscillator();
+        osc1.type = 'sawtooth';
+        osc2.type = 'triangle';
+        osc1.frequency.setValueAtTime(freq, now);
+        osc2.frequency.setValueAtTime(freq * 1.004, now);
+
+        // Warm overdrive waveshaper
+        const shaper = this.ctx.createWaveShaper();
+        const curve = new Float32Array(256);
+        for (let i = 0; i < 256; i++) {
+          const x = (i * 2) / 256 - 1;
+          curve[i] = Math.tanh(x * 3.2);
+        }
+        shaper.curve = curve;
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(2600, now);
+        filter.frequency.exponentialRampToValueAtTime(680, now + 1.4);
+
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(0.28 * velocity, now + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 1.6);
+
+        osc1.connect(shaper);
+        osc2.connect(shaper);
+        shaper.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc1.start(now);
+        osc2.start(now);
+        osc1.stop(now + 1.65);
+        osc2.stop(now + 1.65);
+      }
+
+      playViolinBow(freq, velocity) {
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const vib = this.ctx.createOscillator();
+        const vibGain = this.ctx.createGain();
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(freq, now);
+
+        // Vibrato LFO
+        vib.frequency.value = 5.5;
+        vibGain.gain.value = freq * 0.012;
+        vib.connect(vibGain);
+        vibGain.connect(osc.frequency);
+
+        // Violin woody body formant filter
+        const bodyFilter = this.ctx.createBiquadFilter();
+        bodyFilter.type = 'bandpass';
+        bodyFilter.frequency.value = Math.min(2800, freq * 2.2);
+        bodyFilter.Q.value = 1.6;
+
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(0.38 * velocity, now + 0.14); // Slow bow attack
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
+
+        osc.connect(bodyFilter);
+        bodyFilter.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(now);
+        vib.start(now);
+        osc.stop(now + 1.55);
+        vib.stop(now + 1.55);
+      }
+
+      // ---- SLOT 2: MELODY / KEYS / WIND / BRASS ----
+      playMelodyInstrument(mode, freq) {
+        this.init();
+        const now = this.ctx.currentTime;
+
+        if (mode === 'piano') {
+          const osc1 = this.ctx.createOscillator();
+          const osc2 = this.ctx.createOscillator();
+          osc1.type = 'triangle';
+          osc2.type = 'sine';
+          osc1.frequency.setValueAtTime(freq, now);
+          osc2.frequency.setValueAtTime(freq * 2, now);
+
+          const gain1 = this.ctx.createGain();
+          const gain2 = this.ctx.createGain();
+          gain1.gain.setValueAtTime(0.45, now);
+          gain1.gain.exponentialRampToValueAtTime(0.001, now + 1.6);
+          gain2.gain.setValueAtTime(0.15, now);
+          gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+
+          osc1.connect(gain1);
+          osc2.connect(gain2);
+          gain1.connect(this.ctx.destination);
+          gain2.connect(this.ctx.destination);
+          osc1.start(now);
+          osc2.start(now);
+          osc1.stop(now + 1.65);
+          osc2.stop(now + 0.6);
+        } else if (mode === 'yamaha') {
+          // Yamaha DX/Portasound style warm chorus FM electric keys
+          const carrier = this.ctx.createOscillator();
+          const mod = this.ctx.createOscillator();
+          const modGain = this.ctx.createGain();
+
+          carrier.type = 'sine';
+          mod.type = 'sine';
+          carrier.frequency.setValueAtTime(freq, now);
+          mod.frequency.setValueAtTime(freq * 2, now);
+
+          modGain.gain.setValueAtTime(freq * 1.4, now);
+          modGain.gain.exponentialRampToValueAtTime(freq * 0.1, now + 0.7);
+
+          const outGain = this.ctx.createGain();
+          outGain.gain.setValueAtTime(0.001, now);
+          outGain.gain.linearRampToValueAtTime(0.36, now + 0.02);
+          outGain.gain.exponentialRampToValueAtTime(0.001, now + 1.25);
+
+          mod.connect(modGain);
+          modGain.connect(carrier.frequency);
+          carrier.connect(outGain);
+          outGain.connect(this.ctx.destination);
+
+          carrier.start(now);
+          mod.start(now);
+          carrier.stop(now + 1.3);
+          mod.stop(now + 1.3);
+        } else if (mode === 'flute') {
+          // Bansuri Flute: airy sine + gentle breath noise + vibrato
+          const osc = this.ctx.createOscillator();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, now);
+
+          const vib = this.ctx.createOscillator();
+          const vibGain = this.ctx.createGain();
+          vib.frequency.value = 5;
+          vibGain.gain.value = freq * 0.009;
+          vib.connect(vibGain);
+          vibGain.connect(osc.frequency);
+
+          const gain = this.ctx.createGain();
+          gain.gain.setValueAtTime(0.001, now);
+          gain.gain.linearRampToValueAtTime(0.38, now + 0.11);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 1.25);
+
+          // Breath chiffon noise
+          const bufLen = Math.floor(this.ctx.sampleRate * 0.5);
+          const buf = this.ctx.createBuffer(1, bufLen, this.ctx.sampleRate);
+          const data = buf.getChannelData(0);
+          for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * 0.18;
+          const breath = this.ctx.createBufferSource();
+          breath.buffer = buf;
+
+          const bp = this.ctx.createBiquadFilter();
+          bp.type = 'bandpass';
+          bp.frequency.value = freq * 2;
+          bp.Q.value = 3;
+
+          const breathGain = this.ctx.createGain();
+          breathGain.gain.setValueAtTime(0.16, now);
+          breathGain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+          breath.connect(bp);
+          bp.connect(breathGain);
+          breathGain.connect(this.ctx.destination);
+
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+
+          osc.start(now);
+          vib.start(now);
+          breath.start(now);
+          osc.stop(now + 1.3);
+          vib.stop(now + 1.3);
+        } else if (mode === 'trumpet') {
+          // Brass Trumpet: sawtooth with brassy filter swell
+          const osc = this.ctx.createOscillator();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(freq, now);
+
+          const filter = this.ctx.createBiquadFilter();
+          filter.type = 'lowpass';
+          filter.Q.value = 2.8;
+          filter.frequency.setValueAtTime(350, now);
+          filter.frequency.linearRampToValueAtTime(2400, now + 0.09);
+          filter.frequency.exponentialRampToValueAtTime(900, now + 0.85);
+
+          const gain = this.ctx.createGain();
+          gain.gain.setValueAtTime(0.001, now);
+          gain.gain.linearRampToValueAtTime(0.34, now + 0.045);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
+
+          osc.connect(filter);
+          filter.connect(gain);
+          gain.connect(this.ctx.destination);
+
+          osc.start(now);
+          osc.stop(now + 0.95);
+        }
+      }
+
+      // ---- SLOT 3: DRUMS / OCTAPAD / BERA ----
+      playPercussion(type) {
+        this.init();
+        const now = this.ctx.currentTime;
+
+        if (type === 'kick' || type === 'octa_kick') {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(type === 'octa_kick' ? 165 : 140, now);
+          osc.frequency.exponentialRampToValueAtTime(34, now + 0.16);
+          gain.gain.setValueAtTime(0.95, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.46);
+        } else if (type === 'snare' || type === 'octa_clap') {
+          const bufferSize = Math.floor(this.ctx.sampleRate * 0.22);
+          const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+          const data = buffer.getChannelData(0);
+          for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+          const noise = this.ctx.createBufferSource();
+          noise.buffer = buffer;
+
+          const filter = this.ctx.createBiquadFilter();
+          filter.type = type === 'octa_clap' ? 'bandpass' : 'highpass';
+          filter.frequency.value = type === 'octa_clap' ? 1200 : 680;
+
+          const noiseGain = this.ctx.createGain();
+          noiseGain.gain.setValueAtTime(0.45, now);
+          noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+
+          noise.connect(filter);
+          filter.connect(noiseGain);
+          noiseGain.connect(this.ctx.destination);
+          noise.start(now);
+
+          const osc = this.ctx.createOscillator();
+          const oscGain = this.ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(195, now);
+          osc.frequency.exponentialRampToValueAtTime(95, now + 0.11);
+          oscGain.gain.setValueAtTime(0.38, now);
+          oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+          osc.connect(oscGain);
+          oscGain.connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.13);
+        } else if (type === 'hihat') {
+          const bufferSize = Math.floor(this.ctx.sampleRate * 0.09);
+          const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+          const data = buffer.getChannelData(0);
+          for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+          const noise = this.ctx.createBufferSource();
+          noise.buffer = buffer;
+          const filter = this.ctx.createBiquadFilter();
+          filter.type = 'highpass';
+          filter.frequency.value = 6500;
+          const gain = this.ctx.createGain();
+          gain.gain.setValueAtTime(0.32, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+
+          noise.connect(filter);
+          filter.connect(gain);
+          gain.connect(this.ctx.destination);
+          noise.start(now);
+        } else if (type === 'rim' || type === 'octa_tom1' || type === 'octa_tom2') {
+          const startFreq = type === 'octa_tom1' ? 320 : type === 'octa_tom2' ? 210 : 250;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(startFreq, now);
+          osc.frequency.exponentialRampToValueAtTime(startFreq * 0.42, now + 0.22);
+          gain.gain.setValueAtTime(0.65, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.25);
+        } else if (type === 'octa_cowbell' || type === 'thalampata') {
+          // Metallic resonant chime / cowbell
+          const f1 = type === 'thalampata' ? 1480 : 540;
+          const f2 = type === 'thalampata' ? 2210 : 800;
+          const dur = type === 'thalampata' ? 0.55 : 0.22;
+
+          [f1, f2].forEach(f => {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(f, now);
+            gain.gain.setValueAtTime(0.18, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now);
+            osc.stop(now + dur + 0.02);
+          });
+        } else if (type === 'bera_gata' || type === 'bera_yak' || type === 'tabla_dayan') {
+          // Traditional resonant pitched hand drum (Bera / Tabla)
+          const baseFreq = type === 'tabla_dayan' ? 290 : type === 'bera_gata' ? 195 : 132;
+          const osc = this.ctx.createOscillator();
+          const harm = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+
+          osc.type = 'sine';
+          harm.type = 'triangle';
+          osc.frequency.setValueAtTime(baseFreq * 1.18, now);
+          osc.frequency.exponentialRampToValueAtTime(baseFreq, now + 0.05);
+          harm.frequency.setValueAtTime(baseFreq * 2.02, now);
+
+          gain.gain.setValueAtTime(0.75, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.48);
+
+          osc.connect(gain);
+          harm.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now);
+          harm.start(now);
+          osc.stop(now + 0.5);
+          harm.stop(now + 0.5);
+        }
+      }
+    }
+
+    // ============================================================================
+    // 2. STUDIO CONFIGURATION & INSTRUMENT DEFINITIONS
+    // ============================================================================
+    const sound = new StudioSoundEngine();
+    const canvas = document.getElementById('stage');
+    const ctx = canvas.getContext('2d');
+
+    let width = 0;
+    let height = 0;
+    let staffHeight = 185;
+    let playAreaHeight = 0;
+
+    let slot1Mode = 'acoustic'; // acoustic, electric, mandolin, violin, none
+    let slot2Mode = 'yamaha';   // yamaha, piano, flute, trumpet, none
+    let slot3Mode = 'drums';    // drums, octapad, bera, none
+
+    // Slot 1 Tunings
+    const SIX_STRING_NOTES = [
+      { name: 'E4', freq: 329.63, step: 0,  color: '#f2c166' },
+      { name: 'B3', freq: 246.94, step: -3, color: '#ea9e58' },
+      { name: 'G3', freq: 196.00, step: -5, color: '#e07a5f' },
+      { name: 'D3', freq: 146.83, step: -8, color: '#b56576' },
+      { name: 'A2', freq: 110.00, step: -11,color: '#6d597a' },
+      { name: 'E2', freq: 82.41,  step: -14,color: '#4ea8de' }
+    ];
+
+    const FOUR_STRING_NOTES = [
+      { name: 'E5', freq: 659.25, step: 7,  color: '#ffd166' },
+      { name: 'A4', freq: 440.00, step: 3,  color: '#f4978e' },
+      { name: 'D4', freq: 293.66, step: -1, color: '#c77dff' },
+      { name: 'G3', freq: 196.00, step: -5, color: '#4cc9f0' }
+    ];
+
+    // Slot 2 Center Melody Nodes (Pentatonic/Harmonic layout)
+    const MELODY_NODE_DEFS = [
+      { name: 'C4', freq: 261.63, step: -2, rx: 0.45, ry: 0.74, color: '#38bdf8' },
+      { name: 'D4', freq: 293.66, step: -1, rx: 0.54, ry: 0.63, color: '#818cf8' },
+      { name: 'E4', freq: 329.63, step: 0,  rx: 0.45, ry: 0.50, color: '#c084fc' },
+      { name: 'G4', freq: 392.00, step: 2,  rx: 0.54, ry: 0.37, color: '#f472b6' },
+      { name: 'A4', freq: 440.00, step: 3,  rx: 0.45, ry: 0.24, color: '#fbbf24' }
+    ];
+
+    // Slot 3 Percussion Presets
+    const DRUM_KIT_DEFS = [
+      { id: 'kick',  name: 'Bass Kick', style: 'bass',   step: 1, color: '#ff5d73', rx: 0.78, ry: 0.69, radius: 52, lugs: 8 },
+      { id: 'snare', name: 'Snare',     style: 'snare',  step: 4, color: '#4cc9f0', rx: 0.69, ry: 0.46, radius: 42, lugs: 6 },
+      { id: 'rim',   name: 'Floor Tom', style: 'tom',    step: 6, color: '#90be6d', rx: 0.88, ry: 0.47, radius: 44, lugs: 6 },
+      { id: 'hihat', name: 'Hi-Hat',    style: 'cymbal', step: 9, color: '#f9c74f', rx: 0.77, ry: 0.24, radius: 36, lugs: 0 }
+    ];
+
+    const OCTAPAD_DEFS = [
+      { id: 'octa_kick',    name: '808 Kick',  style: 'octapad', step: 1, color: '#f43f5e', rx: 0.70, ry: 0.33, radius: 36 },
+      { id: 'octa_clap',    name: 'Clap/Snare',style: 'octapad', step: 4, color: '#38bdf8', rx: 0.81, ry: 0.33, radius: 36 },
+      { id: 'hihat',        name: 'Electro Hat',style:'octapad', step: 9, color: '#facc15', rx: 0.91, ry: 0.33, radius: 36 },
+      { id: 'octa_tom1',    name: 'Hi Synth Tom',style:'octapad',step: 6, color: '#a855f7', rx: 0.70, ry: 0.58, radius: 36 },
+      { id: 'octa_tom2',    name: 'Lo Synth Tom',style:'octapad',step: 3, color: '#10b981', rx: 0.81, ry: 0.58, radius: 36 },
+      { id: 'octa_cowbell', name: 'Cowbell',   style: 'octapad', step: 8, color: '#fb923c', rx: 0.91, ry: 0.58, radius: 36 }
+    ];
+
+    const BERA_DEFS = [
+      { id: 'bera_gata',   name: 'Gata Bera',  style: 'bera',   step: 3, color: '#d97706', rx: 0.73, ry: 0.65, radius: 48, lugs: 10 },
+      { id: 'bera_yak',    name: 'Yak Bera',   style: 'bera',   step: 1, color: '#dc2626', rx: 0.88, ry: 0.55, radius: 48, lugs: 10 },
+      { id: 'tabla_dayan', name: 'Tabla Dayan',style: 'tabla',  step: 5, color: '#eab308', rx: 0.72, ry: 0.36, radius: 39, lugs: 8 },
+      { id: 'thalampata',  name: 'Thalampata', style: 'cymbal', step: 9, color: '#fde047', rx: 0.86, ry: 0.25, radius: 32, lugs: 0 }
+    ];
+
+    let strings = [];
+    let melodyNodes = [];
+    let rhythmPads = [];
+    let orbs = [];
+    let sheetNotes = [];
+    let particles = [];
+
+    const pointer = {
+      x: 0, y: 0, px: 0, py: 0,
+      down: false,
+      moved: false,
+      draggedItem: null,
+      dragOffsetX: 0,
+      dragOffsetY: 0,
+      hoveredItem: null
+    };
+
+    function resize() {
+      const dpr = window.devicePixelRatio || 1;
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      staffHeight = Math.max(160, Math.min(205, height * 0.25));
+      playAreaHeight = height - staffHeight;
+
+      rebuildStrings();
+      rebuildMelodyNodes(true);
+      rebuildRhythmPads(true);
+    }
+
+    function rebuildStrings() {
+      if (slot1Mode === 'none') {
+        strings = [];
+        return;
+      }
+      const noteList = (slot1Mode === 'mandolin' || slot1Mode === 'violin')
+        ? FOUR_STRING_NOTES
+        : SIX_STRING_NOTES;
+
+      const topMargin = playAreaHeight * 0.22;
+      const bottomMargin = playAreaHeight * 0.82;
+      const span = bottomMargin - topMargin;
+      const x1 = width * 0.06;
+      const x2 = width * 0.35;
+
+      strings = noteList.map((note, idx) => {
+        const y = topMargin + (span / (noteList.length - 1)) * idx;
+        return {
+          ...note,
+          x1,
+          x2,
+          y,
+          amp: 0,
+          phase: 0,
+          pluckX: (x1 + x2) / 2
+        };
+      });
+    }
+
+    function rebuildMelodyNodes(preserveRelative = false) {
+      if (slot2Mode === 'none') {
+        melodyNodes = [];
+        return;
+      }
+      const scale = Math.min(width, playAreaHeight) / 720;
+      const baseR = Math.max(24, 30 * scale);
+
+      if (preserveRelative && melodyNodes.length === MELODY_NODE_DEFS.length) {
+        melodyNodes.forEach(m => {
+          m.r = baseR;
+          m.x = width * m.rx;
+          m.y = playAreaHeight * m.ry;
+        });
+      } else {
+        melodyNodes = MELODY_NODE_DEFS.map(def => ({
+          ...def,
+          x: width * def.rx,
+          y: playAreaHeight * def.ry,
+          r: baseR,
+          pulse: 0
+        }));
+      }
+    }
+
+    function rebuildRhythmPads(preserveRelative = false) {
+      if (slot3Mode === 'none') {
+        rhythmPads = [];
+        return;
+      }
+      const defs = slot3Mode === 'octapad'
+        ? OCTAPAD_DEFS
+        : slot3Mode === 'bera'
+          ? BERA_DEFS
+          : DRUM_KIT_DEFS;
+
+      const scale = Math.min(width, playAreaHeight) / 720;
+
+      if (preserveRelative && rhythmPads.length === defs.length) {
+        rhythmPads.forEach((d, i) => {
+          d.r = Math.max(26, defs[i].radius * scale);
+          d.x = width * d.rx;
+          d.y = playAreaHeight * d.ry;
+        });
+      } else {
+        rhythmPads = defs.map(d => ({
+          ...d,
+          x: width * d.rx,
+          y: playAreaHeight * d.ry,
+          r: Math.max(26, d.radius * scale),
+          pulse: 0,
+          ripple: 0
+        }));
+      }
+    }
+
+    // ============================================================================
+    // 3. TRIGGERS & SHEET MUSIC TRANSCRIPTION
+    // ============================================================================
+    function triggerString(s, pluckX, velocity = 0.85) {
+      sound.playStringInstrument(slot1Mode, s.freq, velocity);
+      s.amp = Math.min(26, 18 * velocity);
+      s.phase = 0;
+      s.pluckX = Math.max(s.x1 + 16, Math.min(s.x2 - 16, pluckX));
+
+      recordNote({
+        label: s.name,
+        step: s.step,
+        color: s.color,
+        isDrum: false
+      });
+
+      spawnParticles(s.pluckX, s.y, s.color, 7);
+    }
+
+    function triggerMelodyNode(m) {
+      sound.playMelodyInstrument(slot2Mode, m.freq);
+      m.pulse = 1.0;
+
+      recordNote({
+        label: m.name,
+        step: m.step,
+        color: m.color,
+        isDrum: false
+      });
+
+      spawnParticles(m.x, m.y, m.color, 10);
+    }
+
+    function triggerRhythmPad(d) {
+      sound.playPercussion(d.id);
+      d.pulse = 1.0;
+      d.ripple = 0.01;
+
+      recordNote({
+        label: d.name,
+        step: d.step,
+        color: d.color,
+        isDrum: true
+      });
+
+      spawnParticles(d.x, d.y, d.color, 12);
+    }
+
+    function recordNote(noteData) {
+      const spawnX = width - 75;
+      const recent = sheetNotes[sheetNotes.length - 1];
+      let xPos = spawnX;
+      if (recent && Math.abs(recent.x - spawnX) < 6) {
+        xPos = recent.x;
+      }
+
+      sheetNotes.push({
+        ...noteData,
+        x: xPos,
+        alpha: 1
+      });
+    }
+
+    function spawnOrb(x, y, vx, vy) {
+      const speed = 4.5;
+      const angle = Math.random() * Math.PI * 2;
+      orbs.push({
+        x: x ?? width * 0.5,
+        y: y ?? playAreaHeight * 0.48,
+        vx: vx ?? Math.cos(angle) * speed,
+        vy: vy ?? Math.sin(angle) * speed,
+        r: 8.5,
+        trail: [],
+        cooldowns: new Map()
+      });
+    }
+
+    function spawnParticles(x, y, color, count) {
+      for (let i = 0; i < count; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const sp = 1 + Math.random() * 3.5;
+        particles.push({
+          x, y,
+          vx: Math.cos(a) * sp,
+          vy: Math.sin(a) * sp,
+          life: 1,
+          color
+        });
+      }
+    }
+
+    function crossedHorizontalString(x1, y1, x2, y2, s) {
+      if ((y1 < s.y && y2 >= s.y) || (y1 > s.y && y2 <= s.y)) {
+        const t = (s.y - y1) / (y2 - y1);
+        const ix = x1 + t * (x2 - x1);
+        if (ix >= s.x1 && ix <= s.x2) {
+          return ix;
+        }
+      }
+      return null;
+    }
+
+    // ============================================================================
+    // 4. PHYSICS & ANIMATION UPDATE LOOP
+    // ============================================================================
+    function update() {
+      const now = performance.now();
+
+      for (const s of strings) {
+        if (s.amp > 0.05) {
+          s.amp *= slot1Mode === 'violin' ? 0.96 : 0.93;
+          s.phase += 0.65;
+        } else {
+          s.amp = 0;
+        }
+      }
+
+      for (const m of melodyNodes) {
+        if (m.pulse > 0.01) m.pulse *= 0.88;
+        else m.pulse = 0;
+      }
+
+      for (const d of rhythmPads) {
+        if (d.pulse > 0.01) d.pulse *= 0.86;
+        else d.pulse = 0;
+
+        if (d.ripple > 0) {
+          d.ripple += 0.06;
+          if (d.ripple > 1) d.ripple = 0;
+        }
+      }
+
+      for (const orb of orbs) {
+        const prevX = orb.x;
+        const prevY = orb.y;
+
+        orb.x += orb.vx;
+        orb.y += orb.vy;
+
+        // Play area wall bounds (leaving space at top for HUD)
+        const topWall = 64;
+        if (orb.x - orb.r < 12) {
+          orb.x = 12 + orb.r;
+          orb.vx *= -1;
+        } else if (orb.x + orb.r > width - 12) {
+          orb.x = width - 12 - orb.r;
+          orb.vx *= -1;
+        }
+
+        if (orb.y - orb.r < topWall) {
+          orb.y = topWall + orb.r;
+          orb.vy *= -1;
+        } else if (orb.y + orb.r > playAreaHeight - 12) {
+          orb.y = playAreaHeight - 12 - orb.r;
+          orb.vy *= -1;
+        }
+
+        orb.trail.push({ x: orb.x, y: orb.y });
+        if (orb.trail.length > 14) orb.trail.shift();
+
+        // 1. Check crossing Slot 1 Strings
+        for (const s of strings) {
+          const lastHit = orb.cooldowns.get('s_' + s.name) || 0;
+          if (now - lastHit > 115) {
+            const ix = crossedHorizontalString(prevX, prevY, orb.x, orb.y, s);
+            if (ix !== null) {
+              triggerString(s, ix, 0.8);
+              orb.cooldowns.set('s_' + s.name, now);
+            }
+          }
+        }
+
+        // 2. Check collision with Slot 2 Melody Nodes
+        for (const m of melodyNodes) {
+          const dx = orb.x - m.x;
+          const dy = orb.y - m.y;
+          const dist = Math.hypot(dx, dy);
+          const minDist = orb.r + m.r;
+
+          if (dist < minDist) {
+            const lastHit = orb.cooldowns.get('m_' + m.name) || 0;
+            if (now - lastHit > 130) {
+              triggerMelodyNode(m);
+              orb.cooldowns.set('m_' + m.name, now);
+            }
+            const nx = dx / (dist || 1);
+            const ny = dy / (dist || 1);
+            const dot = orb.vx * nx + orb.vy * ny;
+            orb.vx -= 2 * dot * nx;
+            orb.vy -= 2 * dot * ny;
+            orb.x = m.x + nx * (minDist + 1);
+            orb.y = m.y + ny * (minDist + 1);
+          }
+        }
+
+        // 3. Check collision with Slot 3 Rhythm Pads / Drums
+        for (const d of rhythmPads) {
+          const dx = orb.x - d.x;
+          const dy = orb.y - d.y;
+          const dist = Math.hypot(dx, dy);
+          const minDist = orb.r + d.r;
+
+          if (dist < minDist) {
+            const lastHit = orb.cooldowns.get('d_' + d.id + d.name) || 0;
+            if (now - lastHit > 120) {
+              triggerRhythmPad(d);
+              orb.cooldowns.set('d_' + d.id + d.name, now);
+            }
+            const nx = dx / (dist || 1);
+            const ny = dy / (dist || 1);
+            const dot = orb.vx * nx + orb.vy * ny;
+            orb.vx -= 2 * dot * nx;
+            orb.vy -= 2 * dot * ny;
+            orb.x = d.x + nx * (minDist + 1);
+            orb.y = d.y + ny * (minDist + 1);
+          }
+        }
+      }
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= 0.035;
+        if (p.life <= 0) particles.splice(i, 1);
+      }
+
+      const scrollSpeed = 1.65;
+      for (let i = sheetNotes.length - 1; i >= 0; i--) {
+        const n = sheetNotes[i];
+        n.x -= scrollSpeed;
+        if (n.x < 75) n.alpha -= 0.05;
+        if (n.alpha <= 0) sheetNotes.splice(i, 1);
+      }
+    }
+
+    // ============================================================================
+    // 5. RENDERING (3 Instrument Zones + Orbs + Sheet Music)
+    // ============================================================================
+    function drawSlot1Strings() {
+      if (!strings.length) return;
+
+      const midX = (strings[0].x1 + strings[0].x2) * 0.5;
+      const midY = (strings[0].y + strings[strings.length - 1].y) * 0.5;
+      const spanY = strings[strings.length - 1].y - strings[0].y;
+
+      // Subtle background resonator motif matching selected string instrument
+      ctx.save();
+      if (slot1Mode === 'violin') {
+        // Violin F-hole / body silhouette curves
+        ctx.strokeStyle = 'rgba(232, 176, 89, 0.12)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(midX - 35, midY - 30, 14, 0, Math.PI, true);
+        ctx.lineTo(midX - 45, midY + 35);
+        ctx.arc(midX - 35, midY + 35, 14, Math.PI, 0, true);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(midX + 35, midY - 30, 14, 0, Math.PI, true);
+        ctx.lineTo(midX + 25, midY + 35);
+        ctx.arc(midX + 35, midY + 35, 14, Math.PI, 0, true);
+        ctx.stroke();
+      } else if (slot1Mode === 'electric') {
+        // Electric Guitar Magnetic Pickups under strings
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.09)';
+        ctx.lineWidth = 1.5;
+        [-45, 45].forEach(offset => {
+          ctx.beginPath();
+          ctx.roundRect(midX + offset - 16, strings[0].y - 18, 32, spanY + 36, 12);
+          ctx.fill();
+          ctx.stroke();
+        });
+      } else {
+        // Acoustic Guitar / Mandolin Soundhole Rosette
+        const holeR = spanY * (slot1Mode === 'mandolin' ? 0.38 : 0.45);
+        ctx.beginPath();
+        ctx.arc(midX, midY, holeR, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.015)';
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(232, 176, 89, 0.1)';
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Draw Strings
+      for (let i = 0; i < strings.length; i++) {
+        const s = strings[i];
+        ctx.save();
+
+        // Bridge/Nut pins
+        ctx.fillStyle = s.color;
+        ctx.beginPath();
+        ctx.arc(s.x1, s.y, 3.5, 0, Math.PI * 2);
+        ctx.arc(s.x2, s.y, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        const drawSingleWire = (yShift) => {
+          ctx.beginPath();
+          ctx.moveTo(s.x1, s.y + yShift);
+          if (s.amp > 0.1) {
+            const offset = Math.sin(s.phase) * s.amp;
+            ctx.quadraticCurveTo(s.pluckX, s.y + yShift + offset, s.x2, s.y + yShift);
+            ctx.shadowColor = s.color;
+            ctx.shadowBlur = 12;
+          } else {
+            ctx.lineTo(s.x2, s.y + yShift);
+          }
+          ctx.strokeStyle = s.amp > 0.1 ? s.color : 'rgba(226, 228, 237, 0.46)';
+          ctx.lineWidth = slot1Mode === 'mandolin' ? 1.2 : 1.4 + i * 0.32;
+          ctx.stroke();
+        };
+
+        if (slot1Mode === 'mandolin') {
+          // Twin double-course strings for Mandolin
+          drawSingleWire(-2.2);
+          drawSingleWire(2.2);
+        } else {
+          drawSingleWire(0);
+        }
+
+        // String Note Label
+        ctx.fillStyle = 'rgba(226, 228, 237, 0.55)';
+        ctx.font = '600 11px Inter, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(s.name, s.x1 - 10, s.y);
+        ctx.restore();
+      }
+    }
+
+    function drawSlot2MelodyNodes() {
+      if (!melodyNodes.length) return;
+
+      // Connective visual motif (e.g., bamboo flute body or brass tubing line)
+      if (melodyNodes.length > 1) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(melodyNodes[0].x, melodyNodes[0].y);
+        for (let i = 1; i < melodyNodes.length; i++) {
+          ctx.lineTo(melodyNodes[i].x, melodyNodes[i].y);
+        }
+        ctx.strokeStyle = slot2Mode === 'flute'
+          ? 'rgba(217, 119, 6, 0.2)'
+          : slot2Mode === 'trumpet'
+            ? 'rgba(250, 204, 21, 0.18)'
+            : 'rgba(255, 255, 255, 0.07)';
+        ctx.lineWidth = slot2Mode === 'flute' ? 16 : 6;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      for (const m of melodyNodes) {
+        ctx.save();
+        const isDragged = pointer.draggedItem === m;
+        const isHovered = pointer.hoveredItem === m;
+        const r = m.r + m.pulse * 7 + (isDragged ? 3 : 0);
+
+        if (isDragged || isHovered) {
+          ctx.beginPath();
+          ctx.arc(m.x, m.y, r + 6, 0, Math.PI * 2);
+          ctx.strokeStyle = isDragged ? '#e8b059' : 'rgba(255,255,255,0.28)';
+          ctx.setLineDash([4, 4]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        if (m.pulse > 0.05) {
+          ctx.shadowColor = m.color;
+          ctx.shadowBlur = 22 * m.pulse;
+        } else {
+          ctx.shadowColor = 'rgba(0,0,0,0.55)';
+          ctx.shadowBlur = 12;
+        }
+
+        if (slot2Mode === 'piano' || slot2Mode === 'yamaha') {
+          // Circular Keyboard Harmonic Pad with ivory/ebony key motif
+          ctx.beginPath();
+          ctx.arc(m.x, m.y, r, 0, Math.PI * 2);
+          ctx.fillStyle = slot2Mode === 'piano' ? '#f8fafc' : '#1e293b';
+          ctx.fill();
+          ctx.lineWidth = 3.5;
+          ctx.strokeStyle = m.color;
+          ctx.stroke();
+
+          ctx.shadowBlur = 0;
+          // Inner synth ring
+          ctx.beginPath();
+          ctx.arc(m.x, m.y, r * 0.72, 0, Math.PI * 2);
+          ctx.strokeStyle = slot2Mode === 'piano' ? 'rgba(15,23,42,0.18)' : m.color;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          ctx.fillStyle = slot2Mode === 'piano' ? '#0f172a' : '#f8fafc';
+        } else if (slot2Mode === 'flute') {
+          // Bamboo Flute Tone Hole
+          ctx.beginPath();
+          ctx.arc(m.x, m.y, r, 0, Math.PI * 2);
+          ctx.fillStyle = '#78350f';
+          ctx.fill();
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = '#f59e0b';
+          ctx.stroke();
+
+          ctx.shadowBlur = 0;
+          ctx.beginPath();
+          ctx.arc(m.x, m.y, r * 0.62, 0, Math.PI * 2);
+          ctx.fillStyle = '#1c1917';
+          ctx.fill();
+          ctx.fillStyle = '#fef3c7';
+        } else {
+          // Brass Trumpet Piston Valve
+          const grad = ctx.createRadialGradient(m.x, m.y, 4, m.x, m.y, r);
+          grad.addColorStop(0, '#fef08a');
+          grad.addColorStop(0.7, '#ca8a04');
+          grad.addColorStop(1, '#713f12');
+          ctx.beginPath();
+          ctx.arc(m.x, m.y, r, 0, Math.PI * 2);
+          ctx.fillStyle = grad;
+          ctx.fill();
+          ctx.lineWidth = 2.5;
+          ctx.strokeStyle = m.color;
+          ctx.stroke();
+
+          ctx.shadowBlur = 0;
+          // Mother-of-pearl valve cap
+          ctx.beginPath();
+          ctx.arc(m.x, m.y, r * 0.56, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+          ctx.fill();
+          ctx.fillStyle = '#1e293b';
+        }
+
+        ctx.font = '700 11px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(m.name, m.x, m.y);
+        ctx.restore();
+      }
+    }
+
+    function drawSlot3RhythmPads() {
+      for (const d of rhythmPads) {
+        ctx.save();
+        const isDragged = pointer.draggedItem === d;
+        const isHovered = pointer.hoveredItem === d;
+        const r = d.r + d.pulse * 6 + (isDragged ? 3 : 0);
+
+        if (isDragged || isHovered) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(d.x, d.y, r + 7, 0, Math.PI * 2);
+          ctx.strokeStyle = isDragged ? '#e8b059' : 'rgba(255, 255, 255, 0.25)';
+          ctx.lineWidth = isDragged ? 2 : 1.2;
+          ctx.setLineDash([5, 4]);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        if (d.pulse > 0.05) {
+          ctx.shadowColor = d.color;
+          ctx.shadowBlur = 26 * d.pulse;
+        } else {
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
+          ctx.shadowBlur = isDragged ? 24 : 15;
+        }
+
+        if (d.style === 'octapad') {
+          // Roland-style Octapad Rubber Trigger Pad with LED Rim
+          const size = r * 1.78;
+          ctx.beginPath();
+          ctx.roundRect(d.x - size / 2, d.y - size / 2, size, size, 12);
+          ctx.fillStyle = '#1e2230';
+          ctx.fill();
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = d.pulse > 0.05 ? '#ffffff' : d.color;
+          ctx.stroke();
+
+          ctx.shadowBlur = 0;
+          // Inner rubber pad surface
+          const inner = size * 0.78;
+          ctx.beginPath();
+          ctx.roundRect(d.x - inner / 2, d.y - inner / 2, inner, inner, 8);
+          ctx.fillStyle = `rgba(40, 45, 62, ${0.9 + d.pulse * 0.1})`;
+          ctx.fill();
+
+          ctx.fillStyle = '#f1f5f9';
+          ctx.font = '700 10px Inter, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(d.name, d.x, d.y);
+          ctx.restore();
+          continue;
+        }
+
+        if (d.style === 'cymbal') {
+          const grad = ctx.createRadialGradient(d.x, d.y, r * 0.08, d.x, d.y, r);
+          grad.addColorStop(0, '#fff3b0');
+          grad.addColorStop(0.25, '#e09f3e');
+          grad.addColorStop(0.65, '#b57c1e');
+          grad.addColorStop(0.92, '#e8b059');
+          grad.addColorStop(1, '#6b4710');
+
+          ctx.beginPath();
+          ctx.arc(d.x, d.y, r, 0, Math.PI * 2);
+          ctx.fillStyle = grad;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+
+          ctx.strokeStyle = 'rgba(40, 25, 5, 0.28)';
+          ctx.lineWidth = 1;
+          for (let ring = 0.35; ring < 0.92; ring += 0.15) {
+            ctx.beginPath();
+            ctx.arc(d.x, d.y, r * ring, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+
+          ctx.beginPath();
+          ctx.arc(d.x, d.y, 4.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#1b1d24';
+          ctx.fill();
+        } else {
+          // Circular Acoustic Drum / Sri Lankan Bera / Tabla
+          ctx.beginPath();
+          ctx.arc(d.x, d.y, r, 0, Math.PI * 2);
+          ctx.fillStyle = d.style === 'bera' ? '#5c2d0c' : '#2b2f3c';
+          ctx.fill();
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = d.color;
+          ctx.stroke();
+
+          ctx.shadowBlur = 0;
+
+          const headR = r * 0.85;
+          const skinGrad = ctx.createRadialGradient(d.x, d.y, headR * 0.05, d.x, d.y, headR);
+          skinGrad.addColorStop(0, '#f8f9fc');
+          skinGrad.addColorStop(0.7, d.style === 'bera' ? '#f3e5ab' : '#dadee9');
+          skinGrad.addColorStop(1, d.style === 'bera' ? '#d4b475' : '#a5acbe');
+
+          ctx.beginPath();
+          ctx.arc(d.x, d.y, headR, 0, Math.PI * 2);
+          ctx.fillStyle = skinGrad;
+          ctx.fill();
+
+          // Center black Syahi spot for Tabla or center patch for Snare/Bass/Bera
+          if (d.style === 'tabla') {
+            ctx.beginPath();
+            ctx.arc(d.x, d.y, headR * 0.42, 0, Math.PI * 2);
+            ctx.fillStyle = '#18181b';
+            ctx.fill();
+          } else if (d.style === 'snare' || d.style === 'bass' || d.style === 'bera') {
+            ctx.beginPath();
+            ctx.arc(d.x, d.y, headR * 0.34, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(25, 28, 38, 0.16)';
+            ctx.fill();
+          }
+
+          // Tension lugs / leather straps around the drum rim
+          const lugCount = d.lugs || 6;
+          for (let i = 0; i < lugCount; i++) {
+            const angle = (i * Math.PI * 2) / lugCount;
+            const lx = d.x + Math.cos(angle) * (r * 0.92);
+            const ly = d.y + Math.sin(angle) * (r * 0.92);
+
+            ctx.beginPath();
+            ctx.arc(lx, ly, 3, 0, Math.PI * 2);
+            ctx.fillStyle = d.style === 'bera' ? '#fde68a' : '#d8dde8';
+            ctx.fill();
+          }
+        }
+
+        if (d.ripple > 0) {
+          ctx.beginPath();
+          ctx.arc(d.x, d.y, d.r * 0.82 * d.ripple, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(20, 25, 38, ${(1 - d.ripple) * 0.45})`;
+          ctx.lineWidth = 2.2;
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = d.style === 'tabla' ? '#f8fafc' : '#1b1e28';
+        ctx.font = '700 10.5px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(d.name, d.x, d.y);
+
+        ctx.restore();
+      }
+    }
+
+    function drawOrbsAndParticles() {
+      for (const orb of orbs) {
+        for (let i = 0; i < orb.trail.length; i++) {
+          const t = orb.trail[i];
+          const ratio = (i + 1) / orb.trail.length;
+          ctx.beginPath();
+          ctx.arc(t.x, t.y, orb.r * ratio * 0.75, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(232, 176, 89, ${ratio * 0.22})`;
+          ctx.fill();
+        }
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(orb.x, orb.y, orb.r, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff';
+        ctx.shadowColor = '#e8b059';
+        ctx.shadowBlur = 14;
+        ctx.fill();
+        ctx.restore();
+      }
+
+      for (const p of particles) {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, p.life);
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 2.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    function drawSheetMusic() {
+      const topY = playAreaHeight;
+      const lineSpacing = 11;
+      const halfStep = lineSpacing / 2;
+      const e4Y = topY + 72;
+
+      ctx.save();
+
+      ctx.fillStyle = '#11131c';
+      ctx.fillRect(0, topY, width, staffHeight);
+
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, topY);
+      ctx.lineTo(width, topY);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(226, 228, 237, 0.22)';
+      for (let line = 0; line < 5; line++) {
+        const y = e4Y - line * lineSpacing;
+        ctx.beginPath();
+        ctx.moveTo(40, y);
+        ctx.lineTo(width - 40, y);
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = 'rgba(232, 176, 89, 0.88)';
+      ctx.font = '46px serif';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('𝄞', 48, e4Y - lineSpacing * 1.8);
+
+      const writeX = width - 75;
+      ctx.strokeStyle = 'rgba(232, 176, 89, 0.28)';
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(writeX, e4Y - lineSpacing * 4.8);
+      ctx.lineTo(writeX, e4Y + lineSpacing * 7.5);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      for (const n of sheetNotes) {
+        const ny = e4Y - n.step * halfStep;
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, n.alpha);
+
+        ctx.strokeStyle = 'rgba(226, 228, 237, 0.35)';
+        ctx.lineWidth = 1;
+        if (n.step <= -2) {
+          for (let s = -2; s >= n.step; s -= 2) {
+            const ly = e4Y - s * halfStep;
+            ctx.beginPath();
+            ctx.moveTo(n.x - 10, ly);
+            ctx.lineTo(n.x + 10, ly);
+            ctx.stroke();
+          }
+        } else if (n.step >= 10) {
+          for (let s = 10; s <= n.step; s += 2) {
+            const ly = e4Y - s * halfStep;
+            ctx.beginPath();
+            ctx.moveTo(n.x - 10, ly);
+            ctx.lineTo(n.x + 10, ly);
+            ctx.stroke();
+          }
+        }
+
+        ctx.fillStyle = n.color;
+        ctx.strokeStyle = n.color;
+
+        if (n.isDrum) {
+          ctx.lineWidth = 2;
+          const r = 5;
+          ctx.beginPath();
+          ctx.moveTo(n.x - r, ny - r);
+          ctx.lineTo(n.x + r, ny + r);
+          ctx.moveTo(n.x + r, ny - r);
+          ctx.lineTo(n.x - r, ny + r);
+          ctx.stroke();
+
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(n.x + 5, ny);
+          ctx.lineTo(n.x + 5, ny - 26);
+          ctx.stroke();
+        } else {
+          ctx.beginPath();
+          ctx.ellipse(n.x, ny, 6.2, 4.4, -0.35, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(n.x + 5.5, ny);
+          ctx.lineTo(n.x + 5.5, ny - 28);
+          ctx.stroke();
+        }
+
+        ctx.font = '600 9px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(226, 228, 237, 0.55)';
+        ctx.fillText(n.label, n.x, topY + staffHeight - 14);
+
+        ctx.restore();
+      }
+
+      ctx.restore();
+    }
+
+    function loop() {
+      update();
+      ctx.clearRect(0, 0, width, height);
+      drawSlot1Strings();
+      drawSlot2MelodyNodes();
+      drawSlot3RhythmPads();
+      drawOrbsAndParticles();
+      drawSheetMusic();
+      requestAnimationFrame(loop);
+    }
+
+    // ============================================================================
+    // 6. INTERACTION & DRAG-AND-DROP HANDLERS
+    // ============================================================================
+    function findInteractiveItemAt(x, y) {
+      for (let i = rhythmPads.length - 1; i >= 0; i--) {
+        const d = rhythmPads[i];
+        if (Math.hypot(x - d.x, y - d.y) <= d.r + 6) return { item: d, type: 'rhythm' };
+      }
+      for (let i = melodyNodes.length - 1; i >= 0; i--) {
+        const m = melodyNodes[i];
+        if (Math.hypot(x - m.x, y - m.y) <= m.r + 6) return { item: m, type: 'melody' };
+      }
+      return null;
+    }
+
+    canvas.addEventListener('pointerdown', e => {
+      sound.init();
+      pointer.down = true;
+      pointer.moved = false;
+      pointer.x = pointer.px = e.clientX;
+      pointer.y = pointer.py = e.clientY;
+      pointer.draggedItem = null;
+
+      if (e.clientY >= playAreaHeight) return;
+
+      const hit = findInteractiveItemAt(e.clientX, e.clientY);
+      if (hit) {
+        pointer.draggedItem = hit.item;
+        pointer.draggedType = hit.type;
+        pointer.dragOffsetX = e.clientX - hit.item.x;
+        pointer.dragOffsetY = e.clientY - hit.item.y;
+        canvas.style.cursor = 'grabbing';
+        return;
+      }
+
+      for (const s of strings) {
+        if (e.clientX >= s.x1 && e.clientX <= s.x2 && Math.abs(e.clientY - s.y) <= 10) {
+          triggerString(s, e.clientX, 0.9);
+          return;
+        }
+      }
+    });
+
+    window.addEventListener('pointermove', e => {
+      if (!pointer.down) {
+        const hit = findInteractiveItemAt(e.clientX, e.clientY);
+        pointer.hoveredItem = hit ? hit.item : null;
+        canvas.style.cursor = hit ? 'grab' : 'crosshair';
+        return;
+      }
+
+      pointer.px = pointer.x;
+      pointer.py = pointer.y;
+      pointer.x = e.clientX;
+      pointer.y = e.clientY;
+
+      if (Math.hypot(pointer.x - pointer.px, pointer.y - pointer.py) > 4) {
+        pointer.moved = true;
+      }
+
+      if (pointer.draggedItem) {
+        const item = pointer.draggedItem;
+        const minX = item.r + 12;
+        const maxX = width - item.r - 12;
+        const minY = item.r + 68;
+        const maxY = playAreaHeight - item.r - 12;
+
+        item.x = Math.max(minX, Math.min(maxX, e.clientX - pointer.dragOffsetX));
+        item.y = Math.max(minY, Math.min(maxY, e.clientY - pointer.dragOffsetY));
+        item.rx = item.x / width;
+        item.ry = item.y / playAreaHeight;
+        return;
+      }
+
+      for (const s of strings) {
+        const ix = crossedHorizontalString(pointer.px, pointer.py, pointer.x, pointer.y, s);
+        if (ix !== null) {
+          triggerString(s, ix, 0.92);
+        }
+      }
+    });
+
+    window.addEventListener('pointerup', e => {
+      if (!pointer.down) return;
+      pointer.down = false;
+
+      if (pointer.draggedItem) {
+        if (!pointer.moved) {
+          if (pointer.draggedType === 'rhythm') triggerRhythmPad(pointer.draggedItem);
+          else triggerMelodyNode(pointer.draggedItem);
+        }
+        pointer.draggedItem = null;
+        const hit = findInteractiveItemAt(e.clientX, e.clientY);
+        canvas.style.cursor = hit ? 'grab' : 'crosshair';
+        return;
+      }
+
+      if (!pointer.moved && e.clientY < playAreaHeight && e.clientY > 64) {
+        const hitString = strings.some(s => e.clientX >= s.x1 && e.clientX <= s.x2 && Math.abs(e.clientY - s.y) <= 10);
+        if (!hitString) {
+          spawnOrb(e.clientX, e.clientY);
+        }
+      }
+    });
+
+    // Dropdown selectors for the 3 instrument slots
+    document.getElementById('slot1Select').addEventListener('change', e => {
+      sound.init();
+      slot1Mode = e.target.value;
+      rebuildStrings();
+    });
+
+    document.getElementById('slot2Select').addEventListener('change', e => {
+      sound.init();
+      slot2Mode = e.target.value;
+      rebuildMelodyNodes(false);
+    });
+
+    document.getElementById('slot3Select').addEventListener('change', e => {
+      sound.init();
+      slot3Mode = e.target.value;
+      rebuildRhythmPads(false);
+    });
+
+    document.getElementById('addOrbBtn').addEventListener('click', () => {
+      sound.init();
+      spawnOrb(width * (0.3 + Math.random() * 0.4), playAreaHeight * (0.3 + Math.random() * 0.45));
+    });
+
+    document.getElementById('clearOrbsBtn').addEventListener('click', () => {
+      orbs = [];
+    });
+
+    document.getElementById('clearSheetBtn').addEventListener('click', () => {
+      sheetNotes = [];
+    });
+
+    window.addEventListener('resize', resize);
+
+    // Initialize studio with 2 kinetic orbs
+    resize();
+    spawnOrb(width * 0.28, playAreaHeight * 0.35, 4.1, 3.3);
+    spawnOrb(width * 0.65, playAreaHeight * 0.55, -3.9, -3.2);
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
